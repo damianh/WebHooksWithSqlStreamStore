@@ -17,5 +17,7 @@ namespace WebHooks.Publisher.Api
         public DateTime CreatedUtc { get; set; }
 
         public int Sequence { get; set; }
+
+        public string ErrorMessage { get; set; }
     }
 }

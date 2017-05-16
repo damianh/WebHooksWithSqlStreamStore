@@ -321,11 +321,13 @@
             deliveryEventsPage.Items[0].EventMessageId.ShouldBe(messageId);
             deliveryEventsPage.Items[0].Success.ShouldBeTrue();
             deliveryEventsPage.Items[0].EventSequence.ShouldBe(0);
+            deliveryEventsPage.Items[0].ErrorMessage.ShouldBeNullOrWhiteSpace();
 
             deliveryEventsPage.Items[1].EventName.ShouldBe(eventName);
             deliveryEventsPage.Items[1].EventMessageId.ShouldBe(messageId);
             deliveryEventsPage.Items[1].Success.ShouldBeFalse();
             deliveryEventsPage.Items[1].EventSequence.ShouldBe(0);
+            deliveryEventsPage.Items[1].ErrorMessage.ShouldNotBeNullOrWhiteSpace();
         }
 
 

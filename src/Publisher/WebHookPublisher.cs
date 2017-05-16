@@ -141,6 +141,7 @@
                         {
                             // Delivery failed, write error delivery message
                             deliveryMetadata.DeliverySuccess = false;
+                            deliveryMetadata.ErrorMessage = $"Subscriber returned status code {response.StatusCode}";
                             await AppendDeliveryMessage(deliveryMetadata, streamIds.DeliveriesStreamId,
                                 streamMessageToDeliver.Type, jsonData, cancellationToken);
                         }

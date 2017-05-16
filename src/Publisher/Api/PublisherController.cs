@@ -173,17 +173,18 @@
             }
             var items = page.Messages.Select(m =>
             {
-                var deliveryInfo = JsonConvert.DeserializeObject<DeliveryMetadata>(m.JsonMetadata, WebHookPublisher.SerializerSettings);
+                var deliveryMetadata = JsonConvert.DeserializeObject<DeliveryMetadata>(m.JsonMetadata, WebHookPublisher.SerializerSettings);
 
                 return new DeliveryEventItem
                 {
                     MessageId = m.MessageId,
-                    EventMessageId = deliveryInfo.EventId,
-                    EventSequence = deliveryInfo.Sequence,
-                    Success = deliveryInfo.DeliverySuccess,
+                    EventMessageId = deliveryMetadata.EventId,
+                    EventSequence = deliveryMetadata.Sequence,
+                    Success = deliveryMetadata.DeliverySuccess,
                     CreatedUtc = m.CreatedUtc,
                     EventName = m.Type,
                     Sequence = m.StreamVersion,
+                    ErrorMessage = deliveryMetadata.ErrorMessage,
                 };
             }).ToArray();
             return new DeliveryEventsPage
