@@ -10,6 +10,7 @@
     using Shouldly;
     using SqlStreamStore;
     using SqlStreamStore.Streams;
+    using WebHooks.Publisher;
     using WebHooks.Subscriber.Api;
     using Xunit;
 
@@ -121,18 +122,20 @@
             // Arrange
             var request = new AddSubscriptionRequest
             {
-                Name = "foo"
+                Name = "foo",
             };
-            var addSubscriptionResponse = await _client.PostAsJson(request, "hooks");
+            var addSubscription = await _client.PostAsJson(request, "hooks");
+            var addSubscriptionResponse = await addSubscription.Content.ReadAs<AddSubscriptionResponse>();
             var eventName = "foo";
             var messageId = Guid.NewGuid();
             var json = "{ \"id\": 1 }";
+            var signature = PayloadSignature.CreateSignature(json, addSubscriptionResponse.Secret);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var postEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscriptionResponse.Headers.Location)
+            var postEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscription.Headers.Location)
             {
                 Content = content
             };
-            SetCustomHeaders(postEventRequest, eventName, messageId);
+            SetCustomHeaders(postEventRequest, eventName, messageId, signature);
 
             // Act
             var response = await _client.SendAsync(postEventRequest);
@@ -153,23 +156,25 @@
             {
                 Name = "foo"
             };
-            var addSubscriptionResponse = await _client.PostAsJson(request, "hooks");
+            var addSubscription = await _client.PostAsJson(request, "hooks");
+            var addSubscriptionResponse = await addSubscription.Content.ReadAs<AddSubscriptionResponse>();
             var eventName = "foo";
             var messageId = Guid.NewGuid();
             var json = "{ \"id\": 1 }";
-            var postEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscriptionResponse.Headers.Location)
+            var signature = PayloadSignature.CreateSignature(json, addSubscriptionResponse.Secret);
+            var postEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscription.Headers.Location)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
-            SetCustomHeaders(postEventRequest, eventName, messageId);
+            SetCustomHeaders(postEventRequest, eventName, messageId, signature);
             await _client.SendAsync(postEventRequest);
 
             // Act
-            var secondPostEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscriptionResponse.Headers.Location)
+            var secondPostEventRequest = new HttpRequestMessage(HttpMethod.Post, addSubscription.Headers.Location)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
-            SetCustomHeaders(postEventRequest, eventName, messageId);
+            SetCustomHeaders(postEventRequest, eventName, messageId, signature);
             await _client.SendAsync(secondPostEventRequest);
 
             (await _streamStore.ReadAllForwards(Position.Start, 10, true))
@@ -179,12 +184,14 @@
                 .ShouldNotBeNull();
         }
 
-        private void SetCustomHeaders(HttpRequestMessage postEventRequest, string eventName, Guid messageId)
+        private void SetCustomHeaders(HttpRequestMessage postEventRequest, string eventName, Guid messageId,
+            string signature)
         {
             var headers = new WebHookHeaders(_subscriberSettings.Vendor);
             postEventRequest.Headers.TryAddWithoutValidation(headers.EventNameHeader, eventName);
             postEventRequest.Headers.TryAddWithoutValidation(headers.MessageIdHeader, messageId.ToString("d"));
             postEventRequest.Headers.TryAddWithoutValidation(headers.SequenceHeader, "1");
+            postEventRequest.Headers.TryAddWithoutValidation(headers.SignatureHeader, signature);
         }
 
         public void Dispose()

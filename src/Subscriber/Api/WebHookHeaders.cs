@@ -7,6 +7,7 @@ namespace WebHooks.Subscriber.Api
             EventNameHeader = $"X-{vendor}-WebHook-EventName";
             MessageIdHeader = $"X-{vendor}-WebHook-MessageId";
             SequenceHeader = $"X-{vendor}-WebHook-Sequence";
+            SignatureHeader = $"X-{vendor}-WebHook-Signature";
         }
 
         public string EventNameHeader { get; }
@@ -14,5 +15,7 @@ namespace WebHooks.Subscriber.Api
         public string MessageIdHeader { get; }
 
         public string SequenceHeader { get; }
+
+        public string SignatureHeader { get; }
     }
 }

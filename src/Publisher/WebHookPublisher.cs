@@ -4,6 +4,7 @@
     using System.Collections.Generic;
     using System.Linq;
     using System.Net.Http;
+    using System.Security.Cryptography;
     using System.Text;
     using System.Threading;
     using System.Threading.Tasks;
@@ -122,13 +123,8 @@
 
                         // Forward the message to the subscriber.
                         var jsonData = await streamMessageToDeliver.GetJsonData(cts.Token);
-                        var request = new HttpRequestMessage(HttpMethod.Post, webHook.PayloadTargetUri)
-                        {
-                            Content = new StringContent(jsonData, Encoding.UTF8, "application/json")
-                        };
-                        request.Headers.TryAddWithoutValidation(_webHookHeaders.EventNameHeader, streamMessageToDeliver.Type);
-                        request.Headers.TryAddWithoutValidation(_webHookHeaders.MessageIdHeader, streamMessageToDeliver.MessageId.ToString("d"));
-                        request.Headers.TryAddWithoutValidation(_webHookHeaders.SequenceHeader, streamMessageToDeliver.StreamVersion.ToString());
+                        var request = CreateSubscriberRequest(webHook, jsonData, streamMessageToDeliver, webHook.Secret);
+
                         var response = await _httpClient.SendAsync(request, cts.Token); //TODO try-catch
                         var deliveryMetadata = new DeliveryMetadata
                         {
@@ -159,6 +155,32 @@
             }
         }
 
+        private static TimeSpan CalculateDelay(int attemptCount, TimeSpan maxDelay)
+        {
+            var delay = Math.Pow(2d, attemptCount);
+            return TimeSpan.FromSeconds(Math.Min(delay, maxDelay.TotalSeconds));
+        }
+
+        private HttpRequestMessage CreateSubscriberRequest( WebHooks.WebHook webHook, string jsonData,
+            StreamMessage streamMessageToDeliver, string webhookSecret)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, webHook.PayloadTargetUri)
+            {
+                Content = new StringContent(jsonData, Encoding.UTF8, "application/json")
+            };
+            request.Headers.TryAddWithoutValidation(_webHookHeaders.EventNameHeader, streamMessageToDeliver.Type);
+            request.Headers.TryAddWithoutValidation(_webHookHeaders.MessageIdHeader,
+                streamMessageToDeliver.MessageId.ToString("d"));
+            request.Headers.TryAddWithoutValidation(_webHookHeaders.SequenceHeader,
+                streamMessageToDeliver.StreamVersion.ToString());
+            if (!string.IsNullOrWhiteSpace(webhookSecret))
+            {
+                var signature = PayloadSignature.CreateSignature(jsonData, webhookSecret);
+                request.Headers.TryAddWithoutValidation(_webHookHeaders.SignatureHeader, signature);
+            }
+            return request;
+        }
+
         private async Task AppendDeliveryMessage(DeliveryMetadata deliveryMetadata, string deliveryStreamId,
             string messageType, string eventDataJson, CancellationToken cancellationToken)
         {
@@ -166,12 +188,6 @@
             var newStreamMessage = new NewStreamMessage(Guid.NewGuid(), messageType, eventDataJson, jsonMeta);
             await _streamStore.AppendToStream(deliveryStreamId, ExpectedVersion.Any, newStreamMessage,
                 cancellationToken);
-        }
-
-        private static TimeSpan CalculateDelay(int attemptCount, TimeSpan maxDelay)
-        {
-            var delay = Math.Pow(2d, attemptCount);
-            return TimeSpan.FromSeconds(Math.Min(delay, maxDelay.TotalSeconds));
         }
 
         private async Task<(bool Found, StreamMessage StreamMessage)> GetNextMessageToDeliver(

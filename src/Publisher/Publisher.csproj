@@ -82,6 +82,7 @@
     <Compile Include="Domain\WebHooks.cs" />
     <Compile Include="Domain\WebHooksRepository.cs" />
     <Compile Include="GetUtcNow.cs" />
+    <Compile Include="PayloadSignature.cs" />
     <Compile Include="ReleaseLock.cs" />
     <Compile Include="Domain\WebHookHeaders.cs" />
     <Compile Include="WebHookPublisher.cs" />

@@ -1,6 +1,7 @@
 ﻿namespace WebHooks.Subscriber.Api
 {
     using System;
+    using System.Collections.Generic;
     using System.Linq;
     using System.Threading;
     using System.Threading.Tasks;
@@ -122,12 +123,40 @@
                 throw new Exception("Receive Error");
             }
 
-            var eventName = Request.Headers.GetValues(_webHookHeaders.EventNameHeader).Single();
-            var messageId = Guid.Parse(Request.Headers.GetValues(_webHookHeaders.MessageIdHeader).Single());
-            var sequence = Request.Headers.GetValues(_webHookHeaders.SequenceHeader).Single();
+            IEnumerable<string> variables;
+            if (!Request.Headers.TryGetValues(_webHookHeaders.EventNameHeader, out variables))
+            {
+                return BadRequest("");
+            }
+            var eventName = variables.Single();
+
+            if (!Request.Headers.TryGetValues(_webHookHeaders.MessageIdHeader, out variables))
+            {
+                return BadRequest("");
+            }
+            var messageId = Guid.Parse(variables.Single());
+
+            if (!Request.Headers.TryGetValues(_webHookHeaders.SequenceHeader, out variables))
+            {
+                return BadRequest("");
+            }
+            // Sequence usage _may_ be used to detect lost / skipped messages. 
+            // That's for you to implement...
+
+            if (!Request.Headers.TryGetValues(_webHookHeaders.SignatureHeader, out var values))
+            {
+                return BadRequest("");
+            }
+            var signature = values.Single();
             var body = await Request.Content.ReadAsStringAsync();
 
-            var newStreamMessage = new NewStreamMessage(messageId, eventName, body);
+            var expectedSignature = PayloadSignature.CreateSignature(body, subscription.Secret);
+            if (!signature.Equals(expectedSignature))
+            {
+                return BadRequest("");
+            }
+
+            var newStreamMessage = new NewStreamMessage(messageId, eventName, body); // using same message id allows idempotency
             await _streamStore.AppendToStream(subscription.GetInboxStreamId(), ExpectedVersion.Any,
                 newStreamMessage, cancellationToken);
 

@@ -224,11 +224,13 @@
             {
                 Name = "foo"
             };
-            var addSubscriptionResponse = await _subscriberClient.PostAsJson(request, "hooks");
+            var addSubscription = await _subscriberClient.PostAsJson(request, "hooks");
+            var addSubscriptionResponse = await addSubscription.Content.ReadAs<AddSubscriptionResponse>();
             var hookUri = new Uri(_subscriberClient.BaseAddress, "hooks");
-            var payloadTargetUri = new Uri(hookUri, addSubscriptionResponse.Headers.Location);
+            var payloadTargetUri = new Uri(hookUri, addSubscription.Headers.Location);
 
-            var webhookLocation = await CreateWebHook(CreateAddWebHookRequest(payloadTargetUri.ToString()));
+            var addWebHookRequest = CreateAddWebHookRequest(payloadTargetUri.ToString(), addSubscriptionResponse.Secret);
+            var webhookLocation = await CreateWebHook(addWebHookRequest);
             var messageId = Guid.NewGuid();
             var eventName = "foo";
             var json = "bar";
@@ -296,10 +298,12 @@
             {
                 Name = "foo"
             };
-            var addSubscriptionResponse = await _subscriberClient.PostAsJson(request, "hooks");
+            var addSubscription = await _subscriberClient.PostAsJson(request, "hooks");
+            var addSubscriptionResponse = await addSubscription.Content.ReadAs<AddSubscriptionResponse>();
             var hookUri = new Uri(_subscriberClient.BaseAddress, "hooks");
-            var payloadTargetUri = new Uri(hookUri, addSubscriptionResponse.Headers.Location);
-            var webhookLocation = await CreateWebHook(CreateAddWebHookRequest(payloadTargetUri.ToString()));
+            var payloadTargetUri = new Uri(hookUri, addSubscription.Headers.Location);
+            var addWebHookRequest = CreateAddWebHookRequest(payloadTargetUri.ToString(), addSubscriptionResponse.Secret);
+            var webhookLocation = await CreateWebHook(addWebHookRequest);
             var messageId = Guid.NewGuid();
             var eventName = "foo";
             var json = "bar";
@@ -341,7 +345,9 @@
             _subscriberStreamStore.Dispose();
         }
 
-        private static AddWebHookRequest CreateAddWebHookRequest(string payloadTargetUri = "http://subscriber.example.com/sink")
+        private static AddWebHookRequest CreateAddWebHookRequest(
+            string payloadTargetUri = "http://subscriber.example.com/sink",
+            string secret = "secret")
         {
             var addWebHook = new AddWebHookRequest
             {
@@ -349,7 +355,7 @@
                 Enabled = true,
                 SubscribeToEvents = new[] {"foo", "bar"},
                 SubscriptionChoice = SubscriptionChoice.SelectedEvents,
-                Secret = "secret"
+                Secret = secret
             };
             return addWebHook;
         }

@@ -75,6 +75,7 @@
     <Compile Include="Api\WebHookHeaders.cs" />
     <Compile Include="GetUtcNow.cs" />
     <Compile Include="Api\SubscriptionController.cs" />
+    <Compile Include="Api\PayloadSignature.cs" />
     <Compile Include="WebHookSubscriber.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="WebHookSubscriberSettings.cs" />
