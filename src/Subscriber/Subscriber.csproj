@@ -1,17 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net461</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>WebHooks.Subscriber</AssemblyName>
     <RootNamespace>WebHooks.Subscriber</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="LightInject.WebApi" Version="2.0.0" />
-    <PackageReference Include="Microsoft.Owin" Version="4.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.1.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Formatters.Json" Version="2.1.1" />
     <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.6" />
-    <PackageReference Include="Microsoft.AspNet.WebApi.Owin" Version="5.2.6" />
     <PackageReference Include="SqlStreamStore" Version="1.1.2" />
   </ItemGroup>
   

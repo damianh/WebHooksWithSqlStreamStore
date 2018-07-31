@@ -1,30 +1,21 @@
-﻿namespace WebHooks.Publisher
-{
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Net.Http;
-    using System.Security.Cryptography;
-    using System.Text;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using System.Web.Http;
-    using System.Web.Http.Dispatcher;
-    using LightInject;
-    using Microsoft.Owin.Builder;
-    using Newtonsoft.Json;
-    using Newtonsoft.Json.Serialization;
-    using Owin;
-    using SqlStreamStore;
-    using SqlStreamStore.Streams;
-    using WebHooks.Publisher.Api;
-    using WebHooks.Publisher.Domain;
+﻿using System;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
+using SqlStreamStore;
+using SqlStreamStore.Streams;
+using WebHooks.Publisher.Domain;
 
+namespace WebHooks.Publisher
+{
     public class WebHookPublisher : IDisposable
     {
-        private readonly WebHookPublisherSettings _settings;
-        private readonly IStreamStore _streamStore;
         public const int DefaultMaxWebHookCount = 10;
+
         public static readonly JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
@@ -33,26 +24,28 @@
 #endif
         };
 
-        private readonly WebHooksRepository _webHooksRepository;
         private readonly CancellationTokenSource _disposed = new CancellationTokenSource();
         private readonly HttpClient _httpClient;
+        private readonly WebHookPublisherSettings _settings;
+        private readonly IStreamStore _streamStore;
         private readonly WebHookHeaders _webHookHeaders;
+        private readonly WebHooksRepository _webHooksRepository;
 
         public WebHookPublisher(WebHookPublisherSettings settings)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-            _webHooksRepository = new WebHooksRepository(settings.StreamStore, "webhooks", settings.GetUtcNow, settings.MaxWebHookCount);
+            _webHooksRepository = new WebHooksRepository(settings.StreamStore, "webhooks", settings.GetUtcNow,
+                settings.MaxWebHookCount);
             _httpClient = new HttpClient(settings.HttpMessageHandler);
             _streamStore = settings.StreamStore;
             _webHookHeaders = new WebHookHeaders(settings.Vendor);
-
-            var config = CreateHttpConfiguration();
-            var appBuilder = new AppBuilder();
-            appBuilder.UseWebApi(config);
-            AppFunc = appBuilder.Build();
         }
 
-        public Func<IDictionary<string, object>, Task> AppFunc { get; }
+        public void Dispose()
+        {
+            _disposed.Cancel();
+            _httpClient.Dispose();
+        }
 
         public async Task QueueEvent(Guid messageId, string eventName,
             string jsonData, CancellationToken cancellationToken = default(CancellationToken))
@@ -61,7 +54,7 @@
             var subscribers = webHooks
                 .Items
                 .Where(w => w.SubscriptionChoice == SubscriptionChoice.Everything ||
-                             w.SubscribeToEvents.Contains(eventName) && w.Enabled)
+                            w.SubscribeToEvents.Contains(eventName) && w.Enabled)
                 .ToArray();
 
             using (var cts = CancellationTokenSource.CreateLinkedTokenSource(_disposed.Token, cancellationToken))
@@ -88,22 +81,18 @@
 
                     foreach (var webHook in webHooksToProcess)
                     {
-                        if (cts.Token.IsCancellationRequested)
-                        {
-                            return;
-                        }
+                        if (cts.Token.IsCancellationRequested) return;
                         var streamIds = webHook.StreamIds;
 
                         var nextMessageToDeliver = await GetNextMessageToDeliver(streamIds.OutStreamId, cts.Token);
-                        if (!nextMessageToDeliver.Found)
-                        {
-                            continue;
-                        }
+                        if (!nextMessageToDeliver.Found) continue;
 
                         var streamMessageToDeliver = nextMessageToDeliver.StreamMessage;
-                        var previousDeliveryInfo = await GetPreviousDeliveryInfo(streamIds.DeliveriesStreamId, cancellationToken);
+                        var previousDeliveryInfo =
+                            await GetPreviousDeliveryInfo(streamIds.DeliveriesStreamId, cancellationToken);
 
-                        if (!previousDeliveryInfo.Success && previousDeliveryInfo.EventId == streamMessageToDeliver.MessageId)
+                        if (!previousDeliveryInfo.Success &&
+                            previousDeliveryInfo.EventId == streamMessageToDeliver.MessageId)
                         {
                             // Should we attempt to deliver?
                             var timeSinceLastAttempt = _settings.GetUtcNow() - previousDeliveryInfo.DeliveryDateUtc;
@@ -113,17 +102,15 @@
                                 webHooks.Disable(webHook.Id);
                             }
 
-                            var delay = CalculateDelay(previousDeliveryInfo.DeliveryAttemptCount, _settings.MaxRetryDelay);
-                            if (_settings.GetUtcNow() - previousDeliveryInfo.DeliveryDateUtc < delay)
-                            {
-                                // Too soon to attempt retry;
-                                continue;
-                            }
+                            var delay = CalculateDelay(previousDeliveryInfo.DeliveryAttemptCount,
+                                _settings.MaxRetryDelay);
+                            if (_settings.GetUtcNow() - previousDeliveryInfo.DeliveryDateUtc < delay) continue;
                         }
 
                         // Forward the message to the subscriber.
                         var jsonData = await streamMessageToDeliver.GetJsonData(cts.Token);
-                        var request = CreateSubscriberRequest(webHook, jsonData, streamMessageToDeliver, webHook.Secret);
+                        var request =
+                            CreateSubscriberRequest(webHook, jsonData, streamMessageToDeliver, webHook.Secret);
 
                         var response = await _httpClient.SendAsync(request, cts.Token); //TODO try-catch
                         var deliveryMetadata = new DeliveryMetadata
@@ -131,7 +118,7 @@
                             AttemptCount = previousDeliveryInfo.DeliveryAttemptCount + 1,
                             DeliverySuccess = true,
                             EventId = streamMessageToDeliver.MessageId,
-                            Sequence = streamMessageToDeliver.StreamVersion,
+                            Sequence = streamMessageToDeliver.StreamVersion
                         };
                         if ((int) response.StatusCode > 299)
                         {
@@ -146,11 +133,11 @@
                             await AppendDeliveryMessage(deliveryMetadata, streamIds.DeliveriesStreamId,
                                 streamMessageToDeliver.Type, jsonData, cancellationToken);
                             // Remove the sent messsage from the out stream
-                            await _streamStore.DeleteMessage(streamIds.OutStreamId, streamMessageToDeliver.MessageId, cts.Token);
+                            await _streamStore.DeleteMessage(streamIds.OutStreamId, streamMessageToDeliver.MessageId,
+                                cts.Token);
                             messageSent = true;
                         }
                     }
-
                 } while (messageSent);
             }
         }
@@ -161,7 +148,7 @@
             return TimeSpan.FromSeconds(Math.Min(delay, maxDelay.TotalSeconds));
         }
 
-        private HttpRequestMessage CreateSubscriberRequest( WebHooks.WebHook webHook, string jsonData,
+        private HttpRequestMessage CreateSubscriberRequest(Domain.WebHooks.WebHook webHook, string jsonData,
             StreamMessage streamMessageToDeliver, string webhookSecret)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, webHook.PayloadTargetUri)
@@ -178,6 +165,7 @@
                 var signature = PayloadSignature.CreateSignature(jsonData, webhookSecret);
                 request.Headers.TryAddWithoutValidation(_webHookHeaders.SignatureHeader, signature);
             }
+
             return request;
         }
 
@@ -195,57 +183,22 @@
         {
             var page = await _streamStore.ReadStreamForwards(streamId, StreamVersion.Start, 1, cancellationToken);
             if (page.Status == PageReadStatus.StreamNotFound || page.Messages.Length == 0)
-            {
                 return (false, default(StreamMessage));
-            }
             return (true, page.Messages[0]);
         }
 
-        private async Task<PreviousDeliveryInfo> GetPreviousDeliveryInfo(string deliveryStreamId, CancellationToken cancellationToken)
+        private async Task<PreviousDeliveryInfo> GetPreviousDeliveryInfo(string deliveryStreamId,
+            CancellationToken cancellationToken)
         {
-            var page = await _streamStore.ReadStreamBackwards(deliveryStreamId, StreamVersion.End, 1, cancellationToken);
+            var page = await _streamStore.ReadStreamBackwards(deliveryStreamId, StreamVersion.End, 1,
+                cancellationToken);
             if (page.Status == PageReadStatus.StreamNotFound || page.Messages.Length == 0)
-            {
                 return new PreviousDeliveryInfo(true, DateTime.MinValue, 0, Guid.Empty);
-            }
             var streamMessage = page.Messages[0];
-            var deliveryMetadata = JsonConvert.DeserializeObject<DeliveryMetadata>(streamMessage.JsonMetadata, SerializerSettings);
-            return new PreviousDeliveryInfo(deliveryMetadata.DeliverySuccess, streamMessage.CreatedUtc, deliveryMetadata.AttemptCount, deliveryMetadata.EventId);
-        }
-
-        private HttpConfiguration CreateHttpConfiguration()
-        {
-            var config = new HttpConfiguration();
-            var container = new ServiceContainer();
-            container.RegisterInstance(_streamStore);
-            container.RegisterInstance(_webHooksRepository);
-            var controllerTypeResolver = new ControllerTypeResolver();
-            config.Services.Replace(typeof(IHttpControllerTypeResolver), controllerTypeResolver);
-            foreach (var controllerType in controllerTypeResolver.GetControllerTypes(null))
-            {
-                container.Register(controllerType, new PerRequestLifeTime());
-            }
-            container.EnableWebApi(config);
-            config.MapHttpAttributeRoutes();
-            config.Formatters.JsonFormatter.SerializerSettings = SerializerSettings; 
-            return config;
-        }
-
-        public void Dispose()
-        {
-            _disposed.Cancel();
-            _httpClient.Dispose();
-        }
-
-        private class ControllerTypeResolver : IHttpControllerTypeResolver
-        {
-            // We want to be very explicit which controllers we want to use.
-            // Also we want our controllers internal.
-
-            public ICollection<Type> GetControllerTypes(IAssembliesResolver _)
-            {
-                return new[] { typeof(PublisherController) };
-            }
+            var deliveryMetadata =
+                JsonConvert.DeserializeObject<DeliveryMetadata>(streamMessage.JsonMetadata, SerializerSettings);
+            return new PreviousDeliveryInfo(deliveryMetadata.DeliverySuccess, streamMessage.CreatedUtc,
+                deliveryMetadata.AttemptCount, deliveryMetadata.EventId);
         }
 
         private class PreviousDeliveryInfo

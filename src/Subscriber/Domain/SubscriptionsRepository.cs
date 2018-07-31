@@ -1,24 +1,29 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
+using SqlStreamStore;
+using SqlStreamStore.Streams;
+
 namespace WebHooks.Subscriber.Domain
 {
-    using System;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using Newtonsoft.Json;
-    using SqlStreamStore;
-    using SqlStreamStore.Streams;
-    using WebHooks.Subscriber;
-
     internal class SubscriptionsRepository
     {
-        private readonly IStreamStore _streamStore;
-        private readonly string _name;
         private readonly GetUtcNow _getUtcNow;
         private readonly int _maxSubscriptionCount;
+        private readonly string _name;
+        private readonly IStreamStore _streamStore;
+        private readonly JsonSerializerSettings _jsonSerializerSettings;
 
-        public SubscriptionsRepository(IStreamStore streamStore, string name,
-            GetUtcNow getUtcNow, int maxSubscriptionCount)
+        public SubscriptionsRepository(
+            IStreamStore streamStore,
+            JsonSerializerSettings jsonSerializerSettings,
+            string name,
+            GetUtcNow getUtcNow,
+            int maxSubscriptionCount)
         {
             _streamStore = streamStore;
+            _jsonSerializerSettings = jsonSerializerSettings;
             _name = name;
             _getUtcNow = getUtcNow;
             _maxSubscriptionCount = maxSubscriptionCount;
@@ -42,9 +47,9 @@ namespace WebHooks.Subscriber.Domain
         public async Task Save(Subscriptions subscriptions, CancellationToken cancellationToken)
         {
             var memento = subscriptions.ToMemento();
-            var json = JsonConvert.SerializeObject(memento, WebHookSubscriber.SerializerSettings);
+            var json = JsonConvert.SerializeObject(memento, _jsonSerializerSettings);
             var newStreamMessage = new NewStreamMessage(Guid.NewGuid(), "WebHookSubsriptionsMemento", json);
-            
+
             // TODO: are we interested in concurrency handling here? Should be low traffic...
             await _streamStore.AppendToStream(_name, ExpectedVersion.Any, newStreamMessage, cancellationToken);
         }

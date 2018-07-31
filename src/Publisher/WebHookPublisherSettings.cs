@@ -3,12 +3,10 @@
     using System;
     using System.Net;
     using System.Net.Http;
-    using System.Threading.Tasks;
     using SqlStreamStore;
 
     public class WebHookPublisherSettings
     {
-        private static readonly AcquireLock DefaultAcquireLock = ct => Task.FromResult(new ReleaseLock(_ => { }));
         public const int DefaultMaxWebHookCount = 10;
 
         public WebHookPublisherSettings(IStreamStore streamStore)
@@ -28,14 +26,6 @@
             AutomaticDecompression = DecompressionMethods.GZip,
             AllowAutoRedirect = true
         };
-
-        /// <summary>
-        /// Gets the acquire lock.
-        /// </summary>
-        /// <value>
-        /// The acquire lock.
-        /// </value>
-        public AcquireLock AcquireLock { get; set; } = DefaultAcquireLock;
 
         /// <summary>
         ///     The stream store instance used by the publisher(s).

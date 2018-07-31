@@ -1,23 +1,23 @@
-﻿namespace WebHooks.Publisher.Api
-{
-    using System;
-    using System.Linq;
-    using System.Net;
-    using System.Net.Http;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using System.Web.Http;
-    using Newtonsoft.Json;
-    using SqlStreamStore;
-    using SqlStreamStore.Streams;
-    using WebHooks.Publisher.Domain;
+﻿using System;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
+using SqlStreamStore;
+using SqlStreamStore.Streams;
+using WebHooks.Publisher.Domain;
 
-    [RoutePrefix("hooks")]
-    internal class PublisherController : ApiController
+namespace WebHooks.Publisher.Api
+{
+    [Route("hooks")]
+    internal class PublisherController : ControllerBase
     {
+        private const int PageSize = 50;
         private readonly IStreamStore _streamStore;
         private readonly WebHooksRepository _webHooksRepository;
-        private const int PageSize = 50;
 
         public PublisherController(IStreamStore streamStore, WebHooksRepository webHooksRepository)
         {
@@ -26,7 +26,6 @@
         }
 
         [HttpGet]
-        [Route("")]
         public async Task<WebHook[]> ListWebHooks(CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
@@ -44,8 +43,9 @@
         }
 
         [HttpPost]
-        [Route("")]
-        public async Task<HttpResponseMessage> AddWebHook([FromBody]AddWebHookRequest request, CancellationToken cancellationToken)
+        public async Task<IActionResult> AddWebHook(
+            [FromBody]AddWebHookRequest request,
+            CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             var result = webHooks.Add(request.PayloadTargetUri, request.Enabled,
@@ -53,25 +53,21 @@
 
             if (result.LimitReached)
             {
-                return new HttpResponseMessage(HttpStatusCode.Forbidden); //Consider API problem detail instead.
+                return BadRequest("Webhook limit reached.");
             }
 
             await _webHooksRepository.Save(webHooks, cancellationToken);
 
-            var response = new HttpResponseMessage(HttpStatusCode.Created);
-            response.Headers.Location = new Uri(result.WebHook.Id.ToString(), UriKind.Relative);
-            return response;
+            return Created(new Uri(result.WebHook.Id.ToString(), UriKind.Relative), null);
         }
 
-        [HttpGet]
-        [NullFilter]
-        [Route("{id}")]
-        public async Task<WebHook> GetWebHook([FromUri]Guid id, CancellationToken cancellationToken)
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetWebHook(Guid id, CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             if (webHooks.TryGet(id, out var w))
             {
-                return new WebHook
+                var webHook = new WebHook
                 {
                     Id = w.Id.ToString(),
                     PayloadTargetUri = w.PayloadTargetUri,
@@ -82,13 +78,14 @@
                     CreatedUtc = w.CreatedUtc,
                     HasSecret = !string.IsNullOrWhiteSpace(w.Secret)
                 };
+                return new ObjectResult(webHook);
             }
-            return null;
+
+            return NotFound();
         }
 
-        [HttpDelete]
-        [Route("{id}")]
-        public async Task<IHttpActionResult> DeleteWebHook([FromUri]Guid id, CancellationToken cancellationToken)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteWebHook(Guid id, CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             if (!webHooks.Delete(id))
@@ -99,10 +96,11 @@
             return Ok();
         }
 
-        [HttpPost]
-        [Route("{id}")]
-        public async Task<IHttpActionResult> UpdateWebHook(Guid id,
-            [FromBody] UpdateWebHookRequest request, CancellationToken cancellationToken)
+        [HttpPost("{id}")]
+        public async Task<IActionResult> UpdateWebHook(
+            Guid id,
+            [FromBody] UpdateWebHookRequest request,
+            CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             if (!webHooks.Update(id, request.PayloadTargetUri, request.SubscribeToEvents,
@@ -110,31 +108,34 @@
             {
                 return NotFound();
             }
+
             await _webHooksRepository.Save(webHooks, cancellationToken);
             return Ok();
         }
 
 
-        [HttpGet]
-        [NullFilter]
-        [Route("{id}/out")]
-        public async Task<OutEventsPage> GetOutStreamPage(Guid id, int? start = null, CancellationToken cancellationToken = default(CancellationToken))
+        [HttpGet("{id}/out")]
+        public async Task<IActionResult> GetOutStreamPage(
+            Guid id,
+            int? start = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var fromVersionInclusive = start ?? StreamVersion.Start;
 
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             if (!webHooks.TryGet(id, out var w))
             {
-                return null;
+                return NotFound();
             }
             var streamId = w.StreamIds.OutStreamId;
-            var page = await _streamStore.ReadStreamForwards(streamId, fromVersionInclusive, PageSize, true, cancellationToken);
+            var page = await _streamStore
+                .ReadStreamForwards(streamId, fromVersionInclusive, PageSize, true, cancellationToken);
             if (page.Status == PageReadStatus.StreamNotFound)
             {
-                return new OutEventsPage
+                return new ObjectResult(new OutEventsPage
                 {
                     Next = StreamVersion.Start
-                };
+                });
             }
             var items = page.Messages.Select(m => new OutEventItem
             {
@@ -143,37 +144,40 @@
                 EventName = m.Type,
                 Sequence = m.StreamVersion
             }).ToArray();
-            return new OutEventsPage
+            return new ObjectResult(new OutEventsPage
             {
                 Items = items,
                 Next = items.Last().Sequence
-            };
+            });
         }
 
-        [HttpGet]
-        [NullFilter]
-        [Route("{id}/deliveries")]
-        public async Task<DeliveryEventsPage> GetDeliveriesPage(Guid id, int? start = null, CancellationToken cancellationToken = default(CancellationToken))
+        [HttpGet("{id}/deliveries")]
+        public async Task<IActionResult> GetDeliveriesPage(Guid id, int? start = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var fromVersionInclusive = start ?? StreamVersion.End;
 
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             if (!webHooks.TryGet(id, out var w))
             {
-                return null;
+                return NotFound();
             }
             var streamId = w.StreamIds.DeliveriesStreamId;
-            var page = await _streamStore.ReadStreamBackwards(streamId, fromVersionInclusive, PageSize, true, cancellationToken);
+            var page = await _streamStore.ReadStreamBackwards(streamId, fromVersionInclusive, PageSize, true,
+                cancellationToken);
             if (page.Status == PageReadStatus.StreamNotFound)
             {
-                return new DeliveryEventsPage
+                return new ObjectResult(new DeliveryEventsPage
                 {
                     Next = StreamVersion.End
-                };
+                });
             }
+
             var items = page.Messages.Select(m =>
             {
-                var deliveryMetadata = JsonConvert.DeserializeObject<DeliveryMetadata>(m.JsonMetadata, WebHookPublisher.SerializerSettings);
+                var deliveryMetadata =
+                    JsonConvert.DeserializeObject<DeliveryMetadata>(m.JsonMetadata,
+                        WebHookPublisher.SerializerSettings);
 
                 return new DeliveryEventItem
                 {
@@ -184,14 +188,14 @@
                     CreatedUtc = m.CreatedUtc,
                     EventName = m.Type,
                     Sequence = m.StreamVersion,
-                    ErrorMessage = deliveryMetadata.ErrorMessage,
+                    ErrorMessage = deliveryMetadata.ErrorMessage
                 };
             }).ToArray();
-            return new DeliveryEventsPage
+            return new ObjectResult(new DeliveryEventsPage
             {
                 Items = items,
                 Next = items.Last().Sequence
-            };
+            });
         }
     }
 }

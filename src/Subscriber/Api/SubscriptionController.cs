@@ -1,25 +1,29 @@
-﻿namespace WebHooks.Subscriber.Api
-{
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using System.Web.Http;
-    using SqlStreamStore;
-    using SqlStreamStore.Streams;
-    using WebHooks.Subscriber.Domain;
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using SqlStreamStore;
+using SqlStreamStore.Streams;
+using WebHooks.Subscriber.Domain;
 
-    [RoutePrefix("hooks")]
-    internal class SubscriptionController : ApiController
+namespace WebHooks.Subscriber.Api
+{
+    [Route("hooks")]
+    internal class SubscriptionController : ControllerBase
     {
-        private readonly IStreamStore _streamStore;
         private readonly SubscriptionsRepository _repository;
         private readonly ShouldReturnErrorOnReceive _shouldReturnErrorOnReceive;
+        private readonly IStreamStore _streamStore;
         private readonly WebHookHeaders _webHookHeaders;
 
-        public SubscriptionController(IStreamStore streamStore, SubscriptionsRepository repository,
-            ShouldReturnErrorOnReceive shouldReturnErrorOnReceive, WebHookHeaders webHookHeaders)
+        public SubscriptionController(
+            IStreamStore streamStore,
+            SubscriptionsRepository repository,
+            ShouldReturnErrorOnReceive shouldReturnErrorOnReceive,
+            WebHookHeaders webHookHeaders)
         {
             _streamStore = streamStore;
             _repository = repository;
@@ -27,8 +31,7 @@
             _webHookHeaders = webHookHeaders;
         }
 
-        [HttpGet]
-        [Route("")]
+        [HttpGet("")]
         public async Task<WebHookSubscription[]> ListSubscriptions(CancellationToken cancellationToken)
         {
             var subscriptions = await _repository.Load(cancellationToken);
@@ -43,9 +46,8 @@
                 }).ToArray();
         }
 
-        [HttpPost]
-        [Route("")]
-        public async Task<IHttpActionResult> AddSubscription(
+        [HttpPost("")]
+        public async Task<IActionResult> AddSubscription(
             [FromBody] AddSubscriptionRequest request,
             CancellationToken cancellationToken)
         {
@@ -64,11 +66,9 @@
             return Created(response.PayloadTargetRelativeUri, response);
         }
 
-        [HttpGet]
-        [NullFilter]
-        [Route("{id}")]
+        [HttpGet("{id}")]
         public async Task<WebHookSubscription> GetSubscription(
-            [FromUri] Guid id,
+            Guid id,
             CancellationToken cancellationToken)
         {
             var subscriptions = await _repository.Load(cancellationToken);
@@ -82,10 +82,9 @@
             };
         }
 
-        [HttpDelete]
-        [Route("{id}")]
-        public async Task<IHttpActionResult> DeleteSubscription(
-            [FromUri] Guid id,
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteSubscription(
+            Guid id,
             CancellationToken cancellationToken)
         {
             var subscriptions = await _repository.Load(cancellationToken);
@@ -95,6 +94,7 @@
             {
                 return NotFound();
             }
+
             await _repository.Save(subscriptions, cancellationToken);
 
             // delete the inbox
@@ -104,10 +104,9 @@
             return Ok();
         }
 
-        [HttpPost]
-        [Route("{id}")]
-        public async Task<IHttpActionResult> ReceiveEvent(
-            [FromUri] Guid id,
+        [HttpPost("{id}")]
+        public async Task<IActionResult> ReceiveEvent(
+            Guid id,
             CancellationToken cancellationToken)
         {
             var subscriptions = await _repository.Load(cancellationToken);
@@ -120,43 +119,50 @@
 
             if (_shouldReturnErrorOnReceive())
             {
-                throw new Exception("Receive Error");
+                return StatusCode(500);
             }
 
-            IEnumerable<string> variables;
-            if (!Request.Headers.TryGetValues(_webHookHeaders.EventNameHeader, out variables))
+            if (!Request.Headers.TryGetValue(_webHookHeaders.EventNameHeader, out var variables))
             {
                 return BadRequest("");
             }
+
             var eventName = variables.Single();
 
-            if (!Request.Headers.TryGetValues(_webHookHeaders.MessageIdHeader, out variables))
+            if (!Request.Headers.TryGetValue(_webHookHeaders.MessageIdHeader, out variables))
             {
                 return BadRequest("");
             }
+
             var messageId = Guid.Parse(variables.Single());
 
-            if (!Request.Headers.TryGetValues(_webHookHeaders.SequenceHeader, out variables))
+            if (!Request.Headers.TryGetValue(_webHookHeaders.SequenceHeader, out variables))
             {
                 return BadRequest("");
             }
             // Sequence usage _may_ be used to detect lost / skipped messages. 
             // That's for you to implement...
 
-            if (!Request.Headers.TryGetValues(_webHookHeaders.SignatureHeader, out var values))
+            if (!Request.Headers.TryGetValue(_webHookHeaders.SignatureHeader, out var values))
             {
                 return BadRequest("");
             }
-            var signature = values.Single();
-            var body = await Request.Content.ReadAsStringAsync();
 
+            var signature = values.Single();
+
+            string body;
+            using (var streamReader = new StreamReader(Request.Body, Encoding.UTF8))
+            {
+                body = await streamReader.ReadToEndAsync();
+            }
             var expectedSignature = PayloadSignature.CreateSignature(body, subscription.Secret);
             if (!signature.Equals(expectedSignature))
             {
                 return BadRequest("");
             }
 
-            var newStreamMessage = new NewStreamMessage(messageId, eventName, body); // using same message id allows idempotency
+            var newStreamMessage =
+                new NewStreamMessage(messageId, eventName, body); // using same message id allows idempotency
             await _streamStore.AppendToStream(subscription.GetInboxStreamId(), ExpectedVersion.Any,
                 newStreamMessage, cancellationToken);
 

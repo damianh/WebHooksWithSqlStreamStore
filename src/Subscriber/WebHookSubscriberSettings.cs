@@ -1,7 +1,8 @@
-﻿namespace WebHooks.Subscriber
+﻿using System;
+using SqlStreamStore;
+
+namespace WebHooks.Subscriber
 {
-    using System;
-    using SqlStreamStore;
     public class WebHookSubscriberSettings
     {
         public const int DefaultMaxSubscriptionCount = 10;
@@ -27,5 +28,10 @@
         ///     The vendor segment in the custom headers "X-Vendor-WebHook..."
         /// </summary>
         public string Vendor { get; set; } = "Vendor";
+
+        /// <summary>
+        ///     Set to true for the webhook receiver endpoint to return an error. Used for testing.
+        /// </summary>
+        public bool ReturnErrorOnReceive { get; set; }
     }
 }
