@@ -1,8 +1,8 @@
+using System;
+using WebHooks.Publisher.Domain;
+
 namespace WebHooks.Publisher.Api
 {
-    using System;
-    using WebHooks.Publisher.Domain;
-
     public class AddWebHookRequest
     {
         public Uri PayloadTargetUri { get; set; }

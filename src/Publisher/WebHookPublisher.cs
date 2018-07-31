@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using SqlStreamStore;
+using SqlStreamStore.Infrastructure;
 using SqlStreamStore.Streams;
 using WebHooks.Publisher.Domain;
 
@@ -30,6 +31,7 @@ namespace WebHooks.Publisher
         private readonly IStreamStore _streamStore;
         private readonly WebHookHeaders _webHookHeaders;
         private readonly WebHooksRepository _webHooksRepository;
+        private static readonly DeterministicGuidGenerator DeterministicGuidGenerator = new DeterministicGuidGenerator(Guid.Parse("2930E6EC-4265-4A54-8F86-C337BE5CFC1E"));
 
         public WebHookPublisher(WebHookPublisherSettings settings)
         {
@@ -47,23 +49,31 @@ namespace WebHooks.Publisher
             _httpClient.Dispose();
         }
 
-        public async Task QueueEvent(Guid messageId, string eventName,
-            string jsonData, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task QueueEvent(
+            string eventName,
+            string jsonData,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
             var subscribers = webHooks
                 .Items
-                .Where(w => w.SubscriptionChoice == SubscriptionChoice.Everything ||
-                            w.SubscribeToEvents.Contains(eventName) && w.Enabled)
+                .Where(w => (w.SubscriptionChoice == SubscriptionChoice.Everything
+                            || w.SubscribeToEvents.Contains(eventName))
+                            && w.Enabled)
                 .ToArray();
 
             using (var cts = CancellationTokenSource.CreateLinkedTokenSource(_disposed.Token, cancellationToken))
             {
                 foreach (var subscriber in subscribers)
                 {
+                    var messageId = DeterministicGuidGenerator.Create(Encoding.UTF8.GetBytes(jsonData));
                     var newStreamMessage = new NewStreamMessage(messageId, eventName, jsonData);
                     var streamId = subscriber.StreamIds.OutStreamId;
                     await _streamStore.AppendToStream(streamId, ExpectedVersion.Any, newStreamMessage, cts.Token);
+                    await _streamStore.SetStreamMetadata(
+                        streamId,
+                        ExpectedVersion.Any,
+                        maxCount: _settings.OutStreamMaxCount, cancellationToken: cts.Token);
                 }
             }
         }
@@ -125,16 +135,33 @@ namespace WebHooks.Publisher
                             // Delivery failed, write error delivery message
                             deliveryMetadata.DeliverySuccess = false;
                             deliveryMetadata.ErrorMessage = $"Subscriber returned status code {response.StatusCode}";
-                            await AppendDeliveryMessage(deliveryMetadata, streamIds.DeliveriesStreamId,
-                                streamMessageToDeliver.Type, jsonData, cancellationToken);
+                            await AppendDeliveryMessage(
+                                deliveryMetadata,
+                                streamIds.DeliveriesStreamId,
+                                streamMessageToDeliver.Type,
+                                jsonData,
+                                cancellationToken);
                         }
                         else
                         {
-                            await AppendDeliveryMessage(deliveryMetadata, streamIds.DeliveriesStreamId,
-                                streamMessageToDeliver.Type, jsonData, cancellationToken);
-                            // Remove the sent messsage from the out stream
-                            await _streamStore.DeleteMessage(streamIds.OutStreamId, streamMessageToDeliver.MessageId,
+                            await AppendDeliveryMessage(
+                                deliveryMetadata,
+                                streamIds.DeliveriesStreamId,
+                                streamMessageToDeliver.Type,
+                                jsonData,
+                                cancellationToken);
+
+                            await _streamStore.SetStreamMetadata(
+                                streamIds.DeliveriesStreamId,
+                                ExpectedVersion.Any,
+                                maxCount: _settings.DeliveryStreamMaxCount,
+                                cancellationToken: cancellationToken);
+
+                            await _streamStore.DeleteMessage(
+                                streamIds.OutStreamId,
+                                streamMessageToDeliver.MessageId,
                                 cts.Token);
+
                             messageSent = true;
                         }
                     }

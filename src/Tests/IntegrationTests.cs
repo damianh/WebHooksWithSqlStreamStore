@@ -82,9 +82,8 @@ namespace WebHooks
             await _publisherClient.PostAsJson(addWebHookRequest, "hooks");
 
             var eventName = "foo";
-            var messageId = Guid.NewGuid();
             var json = "{ \"id\": 1 }";
-            await _webHookPublisher.QueueEvent(messageId, eventName, json);
+            await _webHookPublisher.QueueEvent(eventName, json);
             await _webHookPublisher.DeliverNow();
         }
     }

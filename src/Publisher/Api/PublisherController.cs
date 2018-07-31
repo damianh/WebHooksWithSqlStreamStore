@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -48,8 +46,12 @@ namespace WebHooks.Publisher.Api
             CancellationToken cancellationToken)
         {
             var webHooks = await _webHooksRepository.Load(cancellationToken);
-            var result = webHooks.Add(request.PayloadTargetUri, request.Enabled,
-                request.SubscribeToEvents, request.SubscriptionChoice, request.Secret);
+            var result = webHooks.Add(
+                request.PayloadTargetUri,
+                request.Enabled,
+                request.SubscribeToEvents,
+                request.SubscriptionChoice,
+                request.Secret);
 
             if (result.LimitReached)
             {

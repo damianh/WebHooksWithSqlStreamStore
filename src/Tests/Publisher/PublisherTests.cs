@@ -235,10 +235,9 @@ namespace WebHooks.Publisher
             var addWebHookRequest =
                 CreateAddWebHookRequest(payloadTargetUri.ToString(), addSubscriptionResponse.Secret);
             var webhookLocation = await CreateWebHook(addWebHookRequest);
-            var messageId = Guid.NewGuid();
             var eventName = "foo";
             var json = "bar";
-            await _publisher.QueueEvent(messageId, eventName, json);
+            await _publisher.QueueEvent(eventName, json);
 
             await _publisher.DeliverNow();
             var response = await _publisherClient.GetAsync($"hooks/{webhookLocation}/deliveries");
@@ -247,7 +246,7 @@ namespace WebHooks.Publisher
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             deliveryEventsPage.Items.Length.ShouldBe(1);
             deliveryEventsPage.Items[0].EventName.ShouldBe(eventName);
-            deliveryEventsPage.Items[0].EventMessageId.ShouldBe(messageId);
+            deliveryEventsPage.Items[0].EventMessageId.ShouldNotBe(Guid.Empty);
             deliveryEventsPage.Items[0].Success.ShouldBeTrue();
             deliveryEventsPage.Items[0].EventSequence.ShouldBe(0);
         }
@@ -299,17 +298,16 @@ namespace WebHooks.Publisher
         public async Task When_publish_event_then_should_be_in_out_stream()
         {
             var webhookLocation = await CreateWebHook(CreateAddWebHookRequest());
-            var messageId = Guid.NewGuid();
             var eventName = "foo";
             var json = "bar";
-            await _publisher.QueueEvent(messageId, eventName, json);
+            await _publisher.QueueEvent(eventName, json);
 
             var response = await _publisherClient.GetAsync($"hooks/{webhookLocation}/out");
             var outBoxSummaryItems = await response.Content.ReadAs<OutEventsPage>();
 
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             outBoxSummaryItems.Items.Length.ShouldBe(1);
-            outBoxSummaryItems.Items[0].MessageId.ShouldBe(messageId);
+            outBoxSummaryItems.Items[0].MessageId.ShouldNotBe(Guid.Empty);
             outBoxSummaryItems.Items[0].EventName.ShouldBe(eventName);
         }
 
@@ -327,10 +325,9 @@ namespace WebHooks.Publisher
             var addWebHookRequest =
                 CreateAddWebHookRequest(payloadTargetUri.ToString(), addSubscriptionResponse.Secret);
             var webhookLocation = await CreateWebHook(addWebHookRequest);
-            var messageId = Guid.NewGuid();
             var eventName = "foo";
             var json = "bar";
-            await _publisher.QueueEvent(messageId, eventName, json);
+            await _publisher.QueueEvent(eventName, json);
 
 
             _subscriberSettings.ReturnErrorOnReceive = true;
@@ -345,13 +342,13 @@ namespace WebHooks.Publisher
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             deliveryEventsPage.Items.Length.ShouldBe(2);
             deliveryEventsPage.Items[0].EventName.ShouldBe(eventName);
-            deliveryEventsPage.Items[0].EventMessageId.ShouldBe(messageId);
+            deliveryEventsPage.Items[0].EventMessageId.ShouldNotBe(Guid.Empty);
             deliveryEventsPage.Items[0].Success.ShouldBeTrue();
             deliveryEventsPage.Items[0].EventSequence.ShouldBe(0);
             deliveryEventsPage.Items[0].ErrorMessage.ShouldBeNullOrWhiteSpace();
 
             deliveryEventsPage.Items[1].EventName.ShouldBe(eventName);
-            deliveryEventsPage.Items[1].EventMessageId.ShouldBe(messageId);
+            deliveryEventsPage.Items[1].EventMessageId.ShouldNotBe(Guid.Empty);
             deliveryEventsPage.Items[1].Success.ShouldBeFalse();
             deliveryEventsPage.Items[1].EventSequence.ShouldBe(0);
             deliveryEventsPage.Items[1].ErrorMessage.ShouldNotBeNullOrWhiteSpace();
