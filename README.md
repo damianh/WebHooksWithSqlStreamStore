@@ -4,12 +4,15 @@ A sample project that has a WebHook Publisher and Subscriber:
 
  1. HTTP API to create subscriber endpoints with unique URLs
  2. HTTP API to create webhooks on the publisher using the subscriber endpoint URLs.
- 3. Publisher events are written to the webhook's `out` stream.
+ 3. Publisher events are written to the webhooks' `out` stream. Out streams are
+    limited to a maxium size.
  4. A delivery function pushes events to the subscriber endpoints.
- 5. Deliveries, including failures, are written to the webhook's `delivery` stream.
+ 5. Deliveries, including failures, are written to the webhook's `delivery`
+    stream.
  6. Delivery failures are retried with exponential back-off.
  7. HTTP APIs to read the `out` and `delivery` stream for UI.
- 8. Streams have limits applied - max count and max age. Undelivered events are automatically purged.
+ 8. Streams have limits applied - max count and max age. Undelivered events are
+    automatically purged.
  9. Subscribers in long term failure are disabled after a configurable timespan.
  10. Subscribers leverage SQL Stream Store to handle idempotent receiving. 
  
